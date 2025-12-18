@@ -699,7 +699,7 @@ static std::string TransformZigExpression(const std::string& expr, SBFrame frame
             return "";  // No transformation
         });
 
-    // 2. Transform optional unwrap: optional.? -> optional.data (with null check)
+    // 2. Transform optional unwrap: optional.? -> check discriminant then access data
     // Note: Zig optionals have 'some' (discriminant) and 'data' (payload) fields
     static const std::regex optional_pattern(R"(([\w.]+)\s*\.\s*\?)");
     result = ApplyRegexTransform(result, optional_pattern, frame,
@@ -708,9 +708,23 @@ static std::string TransformZigExpression(const std::string& expr, SBFrame frame
             SBValue val = GetValueAtPath(f, path);
 
             if (IsZigOptional(val)) {
-                // Transform to: (path.some ? path.data : <error>)
-                // For simplicity, just access .data - user should check null first
+                // Check discriminant at runtime - refuse to unwrap null
+                SBValue some = val.GetChildMemberWithName("some");
+                if (some.IsValid() && some.GetValueAsUnsigned(0) == 0) {
+                    // Optional is null - don't rewrite, let LLDB show error
+                    return "";
+                }
                 return path + ".data";
+            }
+            // Check for optional pointer types (?*T) which appear as plain pointers
+            const char* type_name = val.GetTypeName();
+            if (type_name && type_name[0] == '?') {
+                // Type starts with '?' - it's an optional, check for null
+                if (val.GetValueAsUnsigned(0) == 0) {
+                    return "";  // Null pointer optional
+                }
+                // For ?*T, the value itself is the pointer - dereference it
+                return "*" + path;
             }
             return "";
         });
