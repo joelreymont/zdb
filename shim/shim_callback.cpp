@@ -468,13 +468,14 @@ static std::string ResolveLibLLDBPath() {
 static bool RegisterWithInternalAPI(SBDebugger debugger) {
     // Get LLDB version - handle multiple formats:
     // - Homebrew/upstream: "lldb version 21.1.7 ..."
-    // - Apple Xcode: "lldb-1703.0.234.3 ..."
+    // - Apple Xcode: "lldb-1703.0.234.3\nApple Swift version 6.2.1 ..."
+    // Check lldb- prefix FIRST (Apple format) to avoid matching "Swift version"
     const char* version_str = SBDebugger::GetVersionString();
-    const char* ver = strstr(version_str, "version ");
-    if (ver) {
-        ver += 8;  // Skip "version "
-    } else if (strncmp(version_str, "lldb-", 5) == 0) {
+    const char* ver;
+    if (strncmp(version_str, "lldb-", 5) == 0) {
         ver = version_str + 5;  // Skip "lldb-"
+    } else if ((ver = strstr(version_str, "lldb version ")) != nullptr) {
+        ver += 13;  // Skip "lldb version "
     } else {
         // Try to find any leading digits
         ver = version_str;
@@ -811,9 +812,28 @@ public:
 // Global instance to prevent destruction
 static ZigExpressionCommand* g_zig_expr_cmd = nullptr;
 
+static bool IsAppleLLDB() {
+    // Apple LLDB versions are 1000+ (e.g., lldb-1703.0.234.3)
+    // Homebrew/upstream LLDB is < 100 (e.g., lldb version 21.1.7)
+    const char* version_str = SBDebugger::GetVersionString();
+    if (strncmp(version_str, "lldb-", 5) == 0) {
+        int major = atoi(version_str + 5);
+        return major >= 100;
+    }
+    return false;
+}
+
 static void RegisterZigExpressionCommand(SBDebugger debugger) {
     SBCommandInterpreter interp = debugger.GetCommandInterpreter();
     if (!interp.IsValid()) return;
+
+    // Apple LLDB has ABI incompatibility with SBCommandPluginInterface
+    // subclasses - crashes on quit when destroying command objects.
+    // Skip command registration for Apple LLDB (formatters still work).
+    if (IsAppleLLDB()) {
+        fprintf(stderr, "[zdb] Apple LLDB detected - expression syntax disabled (use Homebrew LLDB)\n");
+        return;
+    }
 
     g_zig_expr_cmd = new ZigExpressionCommand();
 
