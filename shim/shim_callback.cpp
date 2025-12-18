@@ -14,6 +14,7 @@
 #include <vector>
 #include <string>
 #include <regex>
+#include <functional>
 
 using namespace lldb;
 
@@ -300,6 +301,12 @@ static bool ZigStructSummary(SBValue value, SBTypeSummaryOptions options, SBStre
     return true;
 }
 
+// shared_ptr layout: { T* ptr, control_block* ctrl }
+struct SharedPtrLayout {
+    void* ptr;
+    void* ctrl;
+};
+
 //===----------------------------------------------------------------------===//
 // ABI-Compatible Types for Internal API
 //===----------------------------------------------------------------------===//
@@ -307,11 +314,7 @@ static bool ZigStructSummary(SBValue value, SBTypeSummaryOptions options, SBStre
 // llvm::StringRef: passed as { const char*, size_t } on ARM64
 // On Apple ARM64, small structs (<=16 bytes) passed in registers
 
-// shared_ptr layout: { T* ptr, control_block* ctrl }
-struct SharedPtrLayout {
-    void* ptr;
-    void* ctrl;
-};
+// Note: SharedPtrLayout defined earlier in synthetic section
 
 // ConstString is just a const char* wrapper
 struct ConstString {
@@ -454,6 +457,14 @@ static bool RegisterWithInternalAPI(SBDebugger debugger) {
     // 5. Specific string types (highest priority)
     RegisterFormatter(category_sp.ptr, AddTypeSummary, "^\\[\\]const u8$", ZigStringSummary, "Zig const string", true);
     RegisterFormatter(category_sp.ptr, AddTypeSummary, "^\\[\\]u8$", ZigStringSummary, "Zig string", true);
+
+    // 6. Synthetic children providers
+    // AddCXXSynthetic crashes due to std::function ABI incompatibility
+    // AddTypeSynthetic with fake shared_ptr doesn't register properly
+    // For now, skip synthetic registration - expression transformation still works
+    fprintf(stderr, "[zdb] Synthetic providers: skipped (ABI barrier)\n");
+    // NOTE: The expression transformer in ZigExpressionCommand still handles
+    // slice[n], arraylist[n], optional.?, and err catch val syntax
 
     // Enable category
     if (zdb::g_symbols.table.Enable) {
@@ -729,11 +740,11 @@ bool lldb::PluginInitialize(SBDebugger debugger) {
     RegisterZigExpressionCommand(debugger);
 
     if (success) {
-        fprintf(stderr, "[zdb] Loaded %zu Zig formatters + Zig expression syntax for 'p'\n",
+        fprintf(stderr, "[zdb] Loaded %zu formatters + expression syntax\n",
                 g_formatters.size());
         return true;
     }
 
-    fprintf(stderr, "[zdb] Formatters failed, but Zig expression syntax available\n");
+    fprintf(stderr, "[zdb] Formatters failed, but expression syntax available\n");
     return true;
 }

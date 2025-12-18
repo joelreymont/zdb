@@ -60,8 +60,8 @@ check() {
     fi
 }
 
-# Check formatters loaded (19 now)
-check "Plugin loaded" "\[zdb\] Loaded [0-9]+ Zig formatters"
+# Check formatters loaded
+check "Plugin loaded" "\[zdb\] Loaded [0-9]+ formatters"
 
 # Test string formatters
 check "String slice" 'string_slice = "Hello, zdb debugger!"'

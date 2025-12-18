@@ -256,12 +256,25 @@ All transformations are automatic and transparent - just use `p` as usual.
 | `p slice[n]` | ✓ | ✓ |
 | `p optional.?` | ✓ | ✓ |
 | `p err catch val` | ✓ | ✓ |
+| Variables view children | ✗ | ✓ |
 | Full TypeSystem | ✗ | ✓ |
 | Works with stock LLDB | ✓ | ✗ |
 
 **zdb** provides type formatters and Zig expression syntax via automatic transformation. No LLDB rebuild required.
 
 **zig-lldb** ([Jacob Shtoyer's fork](https://github.com/jacobly0/llvm-project/tree/lldb-zig)) implements a full `TypeSystemZig` with deep DWARF integration. Requires ~1hr to rebuild LLDB from source.
+
+## Limitations
+
+**Variables View Expansion**: IDE variables view cannot expand slices to show `[0]`, `[1]`, ... elements. This requires LLDB synthetic children providers, which cannot be registered from a plugin due to C++ ABI barriers (`std::function` type erasure incompatibility between plugin and LLDB builds).
+
+**Workaround**: Use the `p` command with Zig syntax:
+```
+(lldb) p my_slice[0]    # Works!
+(lldb) p my_slice[5]    # Works!
+```
+
+This limitation does not affect zig-lldb, which implements a full TypeSystem with native DWARF integration.
 
 ## License
 
