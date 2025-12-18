@@ -805,22 +805,18 @@ static void RegisterZigExpressionCommand(SBDebugger debugger) {
     SBCommandInterpreter interp = debugger.GetCommandInterpreter();
     if (!interp.IsValid()) return;
 
-    // Create command handler
     g_zig_expr_cmd = new ZigExpressionCommand();
 
-    // Register our command as __zdb_expr (internal name)
+    // Register internal command
     interp.AddCommand("__zdb_expr", g_zig_expr_cmd,
-        "Internal: Evaluate expression with Zig syntax support.");
+        "Evaluate expression with Zig syntax support.");
 
-    // Override the 'p' alias to use our Zig-aware expression evaluator
-    // First, remove the existing 'p' alias
+    // Override 'p' for Zig-aware expression evaluation
     SBCommandReturnObject result;
     interp.HandleCommand("command unalias p", result);
-
-    // Now create 'p' as an alias to our command
     interp.HandleCommand("command alias p __zdb_expr", result);
 
-    // Also add 'zig' subcommands for explicit usage
+    // Add 'zig' subcommands
     SBCommand zig_cmd = interp.AddMultiwordCommand("zig", "Zig debugging commands");
     if (zig_cmd.IsValid()) {
         zig_cmd.AddCommand("print", g_zig_expr_cmd,
