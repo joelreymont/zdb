@@ -66,26 +66,17 @@ lldb demo -o "plugin load zig-out/lib/libzdb.dylib" -o "b demo.zig:26" -o run
 Actual LLDB output with zdb:
 
 ```
-(lldb) p point
-(demo.Point) $0 = { .x=100, .y=200 } {
-  x = 100
-  y = 200
-}
-(lldb) p color
-(demo.Color) $1 = blue .blue
-(lldb) p greeting
-([]u8) $2 = "Hello, zdb!" {
-  ptr = 0x00000001000d122e "Hello, zdb!"
-  len = 11
-}
-(lldb) p list
-(array_list.Aligned(i32,null)) $3 = len=3 capacity=32 {
-  items = len=3 ptr=0x100160000 {
-    ptr = 0x0000000100160000
-    len = 3
-  }
-  capacity = 32
-}
+(lldb) frame variable greeting numbers maybe color point list
+([]u8) greeting = "Hello, zdb!"
+([]i32) numbers = len=5 ptr=0x1000da244
+(test_types.Color) color = blue .blue
+(demo.Point) point = { .x=100, .y=200 }
+(array_list.Aligned(i32,null)) list = len=3 capacity=32
+
+(lldb) p numbers[0]
+(int) $0 = 1
+(lldb) p maybe.?
+(int) $1 = 42
 ```
 
 ## Supported Types (19 formatters)
