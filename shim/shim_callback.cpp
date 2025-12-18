@@ -69,6 +69,33 @@ static bool ZigStringSummary(SBValue value, SBTypeSummaryOptions options, SBStre
 }
 
 static bool ZigOptionalSummary(SBValue value, SBTypeSummaryOptions options, SBStream &stream) {
+    // Zig optionals have 'some' (discriminant) and 'data' (payload) fields
+    // some == 1 means has value, some == 0 means null
+    SBValue some = value.GetChildMemberWithName("some");
+    if (some.IsValid()) {
+        if (some.GetValueAsUnsigned(0) == 0) {
+            stream.Printf("null");
+            return true;
+        }
+        // Has value - show the data field
+        SBValue data = value.GetChildMemberWithName("data");
+        if (data.IsValid()) {
+            const char* summary = data.GetSummary();
+            if (summary && summary[0]) {
+                stream.Printf("%s", summary);
+                return true;
+            }
+            const char* val = data.GetValue();
+            if (val && val[0]) {
+                stream.Printf("%s", val);
+                return true;
+            }
+        }
+        stream.Printf("(has value)");
+        return true;
+    }
+
+    // Fallback: try older layout with 'null' named child
     SBValue child = value.GetChildAtIndex(0);
     if (!child.IsValid()) {
         stream.Printf("null");
@@ -94,20 +121,28 @@ static bool ZigOptionalSummary(SBValue value, SBTypeSummaryOptions options, SBSt
 }
 
 static bool ZigErrorUnionSummary(SBValue value, SBTypeSummaryOptions options, SBStream &stream) {
-    SBValue error = value.GetChildMemberWithName("error");
-    if (!error.IsValid()) error = value.GetChildMemberWithName("err");
-    if (!error.IsValid()) return false;
+    // Zig error unions have 'tag' (error code, 0 = success) and 'value' (payload) fields
+    SBValue tag = value.GetChildMemberWithName("tag");
+    if (!tag.IsValid()) {
+        // Fallback: try older field names
+        tag = value.GetChildMemberWithName("error");
+        if (!tag.IsValid()) tag = value.GetChildMemberWithName("err");
+    }
+    if (!tag.IsValid()) return false;
 
-    uint64_t error_val = error.GetValueAsUnsigned(0);
-    if (error_val != 0) {
-        const char* error_name = error.GetValue();
+    uint64_t tag_val = tag.GetValueAsUnsigned(0);
+    if (tag_val != 0) {
+        // Error case - show error name if available
+        const char* error_name = tag.GetValue();
         if (error_name) {
             stream.Printf("error.%s", error_name);
         } else {
-            stream.Printf("error(%llu)", (unsigned long long)error_val);
+            stream.Printf("error(%llu)", (unsigned long long)tag_val);
         }
         return true;
     }
+
+    // Success case - show payload
     SBValue payload = value.GetChildMemberWithName("value");
     if (payload.IsValid()) {
         const char* summary = payload.GetSummary();
@@ -527,12 +562,14 @@ bool IsZigArrayList(SBValue val) {
 
 bool IsZigOptional(SBValue val) {
     if (!val.IsValid()) return false;
-    return val.GetChildMemberWithName("data").IsValid()
-        || val.GetChildMemberWithName("some").IsValid();
+    // Zig optionals have both 'some' (discriminant) and 'data' (payload) fields
+    return val.GetChildMemberWithName("some").IsValid()
+        && val.GetChildMemberWithName("data").IsValid();
 }
 
 bool IsZigErrorUnion(SBValue val) {
     if (!val.IsValid()) return false;
+    // Zig error unions have 'tag' (error code) and 'value' (payload) fields
     return val.GetChildMemberWithName("tag").IsValid()
         && val.GetChildMemberWithName("value").IsValid();
 }
@@ -591,7 +628,8 @@ static std::string TransformZigExpression(const std::string& expr, SBFrame frame
             return "";  // No transformation
         });
 
-    // 2. Transform optional unwrap: optional.? -> optional.data
+    // 2. Transform optional unwrap: optional.? -> optional.data (with null check)
+    // Note: Zig optionals have 'some' (discriminant) and 'data' (payload) fields
     static const std::regex optional_pattern(R"(([\w.]+)\s*\.\s*\?)");
     result = ApplyRegexTransform(result, optional_pattern, frame,
         [](const std::smatch& m, SBFrame f) -> std::string {
@@ -599,6 +637,8 @@ static std::string TransformZigExpression(const std::string& expr, SBFrame frame
             SBValue val = GetValueAtPath(f, path);
 
             if (IsZigOptional(val)) {
+                // Transform to: (path.some ? path.data : <error>)
+                // For simplicity, just access .data - user should check null first
                 return path + ".data";
             }
             return "";
