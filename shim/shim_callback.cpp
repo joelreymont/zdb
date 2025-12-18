@@ -8,6 +8,7 @@
 #include "lldb/API/LLDB.h"
 #include "offset_loader.h"
 #include <dlfcn.h>
+#include <unistd.h>
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
@@ -417,6 +418,47 @@ static bool RegisterFormatter(
     return true;
 }
 
+// Resolve liblldb path from the running process using dladdr
+static std::string ResolveLibLLDBPath() {
+    // 1. Check environment variable
+    const char* env_path = getenv("ZDB_LIBLLDB_PATH");
+    if (env_path && env_path[0]) {
+        return env_path;
+    }
+
+    // 2. Use dladdr on SBDebugger::GetVersionString to find loaded liblldb
+    Dl_info info;
+    if (dladdr((void*)&SBDebugger::GetVersionString, &info) && info.dli_fname) {
+        return info.dli_fname;
+    }
+
+    // 3. Platform-specific fallbacks
+#if defined(__APPLE__)
+    // Try Homebrew ARM64 first, then x86_64
+    const char* fallbacks[] = {
+        "/opt/homebrew/opt/llvm/lib/liblldb.dylib",
+        "/usr/local/opt/llvm/lib/liblldb.dylib",
+        "/Library/Developer/CommandLineTools/usr/lib/liblldb.dylib",
+        nullptr
+    };
+#else
+    // Linux fallbacks
+    const char* fallbacks[] = {
+        "/usr/lib/llvm-18/lib/liblldb.so",
+        "/usr/lib/llvm-17/lib/liblldb.so",
+        "/usr/lib/liblldb.so",
+        nullptr
+    };
+#endif
+    for (const char** p = fallbacks; *p; ++p) {
+        if (access(*p, R_OK) == 0) {
+            return *p;
+        }
+    }
+
+    return "";
+}
+
 static bool RegisterWithInternalAPI(SBDebugger debugger) {
     // Get LLDB version
     const char* version_str = SBDebugger::GetVersionString();
@@ -435,8 +477,15 @@ static bool RegisterWithInternalAPI(SBDebugger debugger) {
     }
     version[i] = '\0';
 
+    // Resolve liblldb path dynamically
+    std::string liblldb_path = ResolveLibLLDBPath();
+    if (liblldb_path.empty()) {
+        fprintf(stderr, "[zdb] Could not find liblldb. Set ZDB_LIBLLDB_PATH env var.\n");
+        return false;
+    }
+
     // Load offsets
-    if (!zdb::g_symbols.load("/opt/homebrew/opt/llvm/lib/liblldb.dylib", version)) {
+    if (!zdb::g_symbols.load(liblldb_path.c_str(), version)) {
         fprintf(stderr, "[zdb] No offsets for LLDB %s\n", version);
         return false;
     }

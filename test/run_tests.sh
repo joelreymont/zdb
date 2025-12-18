@@ -4,12 +4,35 @@ set -e
 
 cd "$(dirname "$0")/.."
 
-# Use Homebrew LLVM (offsets are version-specific)
-LLDB="${LLDB:-/opt/homebrew/opt/llvm/bin/lldb}"
-if [ ! -x "$LLDB" ]; then
-    echo "ERROR: LLDB not found at $LLDB"
+# Find LLDB - check LLDB env var, then PATH, then LLVM_PATH, then platform defaults
+find_lldb() {
+    if [ -n "$LLDB" ] && [ -x "$LLDB" ]; then
+        echo "$LLDB"
+        return 0
+    fi
+    # Check PATH
+    if command -v lldb >/dev/null 2>&1; then
+        command -v lldb
+        return 0
+    fi
+    if [ -n "$LLVM_PATH" ] && [ -x "$LLVM_PATH/bin/lldb" ]; then
+        echo "$LLVM_PATH/bin/lldb"
+        return 0
+    fi
+    # Platform defaults
+    for path in /opt/homebrew/opt/llvm/bin/lldb /usr/local/opt/llvm/bin/lldb /usr/bin/lldb; do
+        if [ -x "$path" ]; then
+            echo "$path"
+            return 0
+        fi
+    done
+    return 1
+}
+
+LLDB=$(find_lldb) || {
+    echo "ERROR: LLDB not found. Set LLDB or LLVM_PATH environment variable."
     exit 1
-fi
+}
 
 # Build plugin
 echo "Building plugin..."
