@@ -167,19 +167,35 @@ The tricky part is calling `TypeCategoryImpl::AddTypeSummary(StringRef, Formatte
 
 Non-trivial types like `shared_ptr` (with destructor) are passed by pointer on ARM64, not inline in registers.
 
-## Adding New LLDB Versions
+## Creating Offset Tables for New LLDB Versions
 
-When LLDB is updated:
+zdb requires an offset table matching your LLDB version. When LLDB updates, generate a new table:
 
 ```bash
-python3 tools/dump_offsets.py /opt/homebrew/opt/llvm/lib/liblldb.dylib > offsets/lldb-XX.Y.Z.json
-cp offsets/lldb-XX.Y.Z.json ~/.config/zdb/offsets/
+# Check your LLDB version
+lldb --version
+# lldb version 21.1.7
+
+# Generate offset table
+python3 tools/dump_offsets.py /opt/homebrew/opt/llvm/lib/liblldb.dylib > offsets/lldb-21.1.7.json
+
+# Install it
+mkdir -p ~/.config/zdb/offsets
+cp offsets/lldb-21.1.7.json ~/.config/zdb/offsets/
 ```
 
-The offset table contains:
-- `reference_symbol`: Known exported symbol (e.g., `_ZN4lldb10SBDebugger10InitializeEv`)
-- `reference_offset`: Its offset in the binary
-- Symbol offsets for `GetCategory`, `AddTypeSummary`, `Enable`
+The tool uses `nm` to find internal LLDB symbols and calculates their offsets relative to an exported reference symbol (`SBDebugger::Initialize`). At runtime, zdb:
+
+1. Finds the reference symbol via `dlsym`
+2. Computes base address: `ref_addr - ref_offset`
+3. Resolves internal functions: `base + symbol_offset`
+
+**Common LLDB paths:**
+- macOS Homebrew: `/opt/homebrew/opt/llvm/lib/liblldb.dylib`
+- macOS Xcode: `/Applications/Xcode.app/.../liblldb.dylib`
+- Linux: `/usr/lib/liblldb.so`
+
+**If `dump_offsets.py` shows warnings:** Some symbols may not exist in your LLDB version. The core symbols (`GetCategory`, `AddTypeSummary`, `Enable`) are required.
 
 ## Testing
 
@@ -199,12 +215,17 @@ Tests verify: string slices, int slices, enums, structs, ArrayList, HashMap.
 
 ## Comparison with zig-lldb
 
-Jacob Shtoyer's [lldb-zig fork](https://github.com/jacobly0/llvm-project/tree/lldb-zig) implements a full `TypeSystemZig` with DWARF integration. Requires rebuilding LLDB but provides:
+| Feature | zdb | zig-lldb |
+|---------|-----|----------|
+| Installation | Plugin, no rebuild | Rebuild LLDB from source |
+| Type formatting | ✓ | ✓ |
+| Expression evaluation | ✗ | ✓ (`p my_slice[0]`) |
+| Type system integration | ✗ | ✓ |
+| Works with stock LLDB | ✓ | ✗ |
 
-- Native expression evaluation for Zig types
-- Full type system integration
+**zdb** provides type formatters only - it makes `frame variable` and `p` output readable. You cannot evaluate Zig expressions like `p my_slice[0]` or `p my_optional.?`.
 
-zdb provides formatting via offset tables, working with any stock LLDB.
+**zig-lldb** ([Jacob Shtoyer's fork](https://github.com/jacobly0/llvm-project/tree/lldb-zig)) implements a full `TypeSystemZig` with DWARF integration, enabling native expression evaluation. Requires ~1hr to rebuild LLDB from source.
 
 ## License
 
