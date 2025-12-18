@@ -42,6 +42,11 @@
       "mangled": "_ZN12lldb_private13FormatManager11GetCategoryENS_11ConstStringEb",
       "offset": "0x35d64c",
       "relative": "0x310fdc"
+    },
+    "formatters::AddCXXSynthetic": {
+      "mangled": "_ZN12lldb_private10formatters15AddCXXSyntheticENSt3__110shared_ptrINS_16TypeCategoryImplEEENS1_8functionIFPNS_25SyntheticChildrenFrontEndEPNS_20CXXSyntheticChildrenENS2_INS_11ValueObjectEEEEEEPKcN4llvm9StringRefENS_17SyntheticChildren5FlagsEb",
+      "offset": "0x369ff8",
+      "relative": "0x31d988"
     }
   }
 }

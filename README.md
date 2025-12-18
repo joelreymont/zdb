@@ -213,19 +213,56 @@ lldb test/test_types \
 
 Tests verify: string slices, int slices, enums, structs, ArrayList, HashMap.
 
+## Expression Evaluation
+
+zdb enables practical expression evaluation via struct member access:
+
+```
+(lldb) p int_slice
+([]i32) len=5 ptr=0x1000da244
+
+(lldb) p int_slice.len
+(unsigned long) 5
+
+(lldb) p int_slice.ptr[0]
+(int) 1
+
+(lldb) p int_slice.ptr[2]
+(int) 3
+
+(lldb) p test_struct.name
+([]u8) "test object"
+
+(lldb) p test_struct.name.ptr[0]
+(unsigned char) 't'
+```
+
+**What works:**
+- `p variable` - Shows formatted summary
+- `p slice.len` - Access slice length
+- `p slice.ptr[n]` - Access slice elements
+- `p struct.field` - Access struct fields
+- `p struct.slice_field.ptr[n]` - Nested access
+
+**What doesn't work (requires TypeSystem):**
+- `p slice[n]` - Direct subscript syntax
+- `p optional.?` - Zig unwrap syntax
+- `p error_union catch` - Zig error handling
+
 ## Comparison with zig-lldb
 
 | Feature | zdb | zig-lldb |
 |---------|-----|----------|
 | Installation | Plugin, no rebuild | Rebuild LLDB from source |
 | Type formatting | ✓ | ✓ |
-| Expression evaluation | ✗ | ✓ (`p my_slice[0]`) |
+| Slice element access | ✓ (`p slice.ptr[0]`) | ✓ (`p slice[0]`) |
+| Zig expression syntax | ✗ | ✓ |
 | Type system integration | ✗ | ✓ |
 | Works with stock LLDB | ✓ | ✗ |
 
-**zdb** provides type formatters only - it makes `frame variable` and `p` output readable. You cannot evaluate Zig expressions like `p my_slice[0]` or `p my_optional.?`.
+**zdb** provides type formatters and practical expression evaluation via struct member access. Use `slice.ptr[n]` instead of `slice[n]`.
 
-**zig-lldb** ([Jacob Shtoyer's fork](https://github.com/jacobly0/llvm-project/tree/lldb-zig)) implements a full `TypeSystemZig` with DWARF integration, enabling native expression evaluation. Requires ~1hr to rebuild LLDB from source.
+**zig-lldb** ([Jacob Shtoyer's fork](https://github.com/jacobly0/llvm-project/tree/lldb-zig)) implements a full `TypeSystemZig` with DWARF integration, enabling native Zig expression syntax. Requires ~1hr to rebuild LLDB from source.
 
 ## License
 

@@ -33,6 +33,9 @@ INTERNAL_SYMBOLS = [
 
     # FormatManager (alternative path)
     ("_ZN12lldb_private13FormatManager11GetCategoryENS_11ConstStringEb", "FormatManager::GetCategory"),
+
+    # AddCXXSynthetic - helper for registering synthetic children
+    ("_ZN12lldb_private10formatters15AddCXXSyntheticENSt3__110shared_ptrINS_16TypeCategoryImplEEENS1_8functionIFPNS_25SyntheticChildrenFrontEndEPNS_20CXXSyntheticChildrenENS2_INS_11ValueObjectEEEEEEPKcN4llvm9StringRefENS_17SyntheticChildren5FlagsEb", "formatters::AddCXXSynthetic"),
 ]
 
 

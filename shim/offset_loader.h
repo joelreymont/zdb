@@ -44,6 +44,7 @@ struct OffsetTable {
     uintptr_t AddTypeFilter = 0;
     uintptr_t CXXFunctionSummaryFormat_ctor = 0;
     uintptr_t FormatManager_GetCategory = 0;
+    uintptr_t AddCXXSynthetic = 0;
 };
 
 // Simple JSON value extraction (no external dependencies)
@@ -122,6 +123,7 @@ public:
     void* AddTypeFormat = nullptr;
     void* AddTypeFilter = nullptr;
     void* CXXFunctionSummaryFormat_ctor = nullptr;
+    void* AddCXXSynthetic = nullptr;
 
     bool load_json(const std::string& path) {
         std::ifstream file(path);
@@ -147,6 +149,7 @@ public:
         table.AddTypeFilter = extract_symbol_offset(json, "TypeCategoryImpl::AddTypeFilter");
         table.CXXFunctionSummaryFormat_ctor = extract_symbol_offset(json, "CXXFunctionSummaryFormat::ctor");
         table.FormatManager_GetCategory = extract_symbol_offset(json, "FormatManager::GetCategory");
+        table.AddCXXSynthetic = extract_symbol_offset(json, "formatters::AddCXXSynthetic");
 
         json_path = path;
         return table.reference_offset != 0;
@@ -245,6 +248,7 @@ public:
         if (table.AddTypeFilter) AddTypeFilter = (void*)(base + table.AddTypeFilter);
         if (table.CXXFunctionSummaryFormat_ctor)
             CXXFunctionSummaryFormat_ctor = (void*)(base + table.CXXFunctionSummaryFormat_ctor);
+        if (table.AddCXXSynthetic) AddCXXSynthetic = (void*)(base + table.AddCXXSynthetic);
 
         loaded = true;
         // Note: We don't dlclose because we need the library loaded

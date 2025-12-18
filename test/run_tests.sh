@@ -40,6 +40,9 @@ OUTPUT=$("$LLDB" test/test_types \
     -o "b test_types.zig:157" \
     -o "run" \
     -o "frame variable" \
+    -o "p int_slice.ptr[0]" \
+    -o "p int_slice.len" \
+    -o "p string_slice" \
     -o "quit" 2>&1)
 
 FAILED=0
@@ -74,6 +77,11 @@ check "Struct" 'test_struct = \{ 5 fields \}'
 # Test std library types
 check "ArrayList" 'list = len=3'
 check "HashMap" 'map = size=3'
+
+# Test expression evaluation
+check "Expr: slice element" '\(int\) 1'
+check "Expr: slice length" '\(unsigned long\) 5'
+check "Expr: string slice" '"Hello, zdb debugger!"'
 
 echo ""
 if [ $FAILED -eq 0 ]; then
