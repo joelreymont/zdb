@@ -215,39 +215,37 @@ Tests verify: string slices, int slices, enums, structs, ArrayList, HashMap.
 
 ## Expression Evaluation
 
-zdb enables practical expression evaluation via struct member access:
+zdb transparently extends the `p` command to support native Zig syntax:
 
 ```
-(lldb) p int_slice
-([]i32) len=5 ptr=0x1000da244
+(lldb) p int_slice[0]
+(int) $0 = 1
 
-(lldb) p int_slice.len
-(unsigned long) 5
+(lldb) p int_slice[2]
+(int) $1 = 3
 
-(lldb) p int_slice.ptr[0]
-(int) 1
+(lldb) p list[0]
+(int) $2 = 10
 
-(lldb) p int_slice.ptr[2]
-(int) 3
+(lldb) p test_struct.optional_value.?
+(int) $3 = 42
 
-(lldb) p test_struct.name
-([]u8) "test object"
+(lldb) p test_struct.error_result catch 0
+(int) $4 = 100
 
-(lldb) p test_struct.name.ptr[0]
-(unsigned char) 't'
+(lldb) p string_slice
+([]u8) "Hello, zdb debugger!"
 ```
 
-**What works:**
-- `p variable` - Shows formatted summary
-- `p slice.len` - Access slice length
-- `p slice.ptr[n]` - Access slice elements
-- `p struct.field` - Access struct fields
-- `p struct.slice_field.ptr[n]` - Nested access
+**Supported Zig syntax:**
+| Syntax | Transformation | Example |
+|--------|---------------|---------|
+| `slice[n]` | `slice.ptr[n]` | `p my_slice[0]` |
+| `arraylist[n]` | `arraylist.items.ptr[n]` | `p list[0]` |
+| `optional.?` | `optional.data` | `p maybe_value.?` |
+| `err catch default` | `(err.tag == 0 ? err.value : default)` | `p result catch 0` |
 
-**What doesn't work (requires TypeSystem):**
-- `p slice[n]` - Direct subscript syntax
-- `p optional.?` - Zig unwrap syntax
-- `p error_union catch` - Zig error handling
+All transformations are automatic and transparent - just use `p` as usual.
 
 ## Comparison with zig-lldb
 
@@ -255,14 +253,15 @@ zdb enables practical expression evaluation via struct member access:
 |---------|-----|----------|
 | Installation | Plugin, no rebuild | Rebuild LLDB from source |
 | Type formatting | ✓ | ✓ |
-| Slice element access | ✓ (`p slice.ptr[0]`) | ✓ (`p slice[0]`) |
-| Zig expression syntax | ✗ | ✓ |
-| Type system integration | ✗ | ✓ |
+| `p slice[n]` | ✓ | ✓ |
+| `p optional.?` | ✓ | ✓ |
+| `p err catch val` | ✓ | ✓ |
+| Full TypeSystem | ✗ | ✓ |
 | Works with stock LLDB | ✓ | ✗ |
 
-**zdb** provides type formatters and practical expression evaluation via struct member access. Use `slice.ptr[n]` instead of `slice[n]`.
+**zdb** provides type formatters and Zig expression syntax via automatic transformation. No LLDB rebuild required.
 
-**zig-lldb** ([Jacob Shtoyer's fork](https://github.com/jacobly0/llvm-project/tree/lldb-zig)) implements a full `TypeSystemZig` with DWARF integration, enabling native Zig expression syntax. Requires ~1hr to rebuild LLDB from source.
+**zig-lldb** ([Jacob Shtoyer's fork](https://github.com/jacobly0/llvm-project/tree/lldb-zig)) implements a full `TypeSystemZig` with deep DWARF integration. Requires ~1hr to rebuild LLDB from source.
 
 ## License
 

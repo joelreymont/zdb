@@ -34,15 +34,17 @@ export ZDB_OFFSETS_FILE="$OFFSET_FILE"
 
 echo "Running formatter tests with $LLDB..."
 
-# Capture LLDB output - use frame variable to show all locals
+# Capture LLDB output - test formatters and expression syntax
 OUTPUT=$("$LLDB" test/test_types \
     -o "plugin load zig-out/lib/libzdb.dylib" \
     -o "b test_types.zig:157" \
     -o "run" \
     -o "frame variable" \
-    -o "p int_slice.ptr[0]" \
-    -o "p int_slice.len" \
-    -o "p string_slice" \
+    -o "p int_slice[0]" \
+    -o "p int_slice[2]" \
+    -o "p list[0]" \
+    -o "p test_struct.optional_value.?" \
+    -o "p test_struct.error_result catch 0" \
     -o "quit" 2>&1)
 
 FAILED=0
@@ -78,10 +80,12 @@ check "Struct" 'test_struct = \{ 5 fields \}'
 check "ArrayList" 'list = len=3'
 check "HashMap" 'map = size=3'
 
-# Test expression evaluation
-check "Expr: slice element" '\(int\) 1'
-check "Expr: slice length" '\(unsigned long\) 5'
-check "Expr: string slice" '"Hello, zdb debugger!"'
+# Test Zig expression syntax (transparent via 'p' command)
+check "Expr: slice[n]" '\(int\).*= 1'
+check "Expr: slice[2]" '\(int\).*= 3'
+check "Expr: arraylist[n]" '\(int\).*= 10'
+check "Expr: optional.?" '\(int\).*= 42'
+check "Expr: err catch" '\(int\).*= 100'
 
 echo ""
 if [ $FAILED -eq 0 ]; then

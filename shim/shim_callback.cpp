@@ -10,7 +10,10 @@
 #include <dlfcn.h>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <vector>
+#include <string>
+#include <regex>
 
 using namespace lldb;
 
@@ -461,15 +464,276 @@ static bool RegisterWithInternalAPI(SBDebugger debugger) {
 }
 
 //===----------------------------------------------------------------------===//
+// Zig Expression Transformer
+//===----------------------------------------------------------------------===//
+
+// Transform Zig expressions to C equivalents:
+//   slice[n]       -> slice.ptr[n]
+//   arraylist[n]   -> arraylist.items.ptr[n]
+//   optional.?     -> optional.data
+//   err catch val  -> (err.tag == 0 ? err.value : val)
+
+namespace {
+
+// Navigate a dot-separated path from a frame to get the SBValue
+SBValue GetValueAtPath(SBFrame frame, const std::string& path) {
+    if (path.empty()) return SBValue();
+
+    size_t dot = path.find('.');
+    std::string root = (dot == std::string::npos) ? path : path.substr(0, dot);
+    SBValue val = frame.FindVariable(root.c_str());
+
+    if (!val.IsValid()) return SBValue();
+    if (dot == std::string::npos) return val;
+
+    // Navigate remaining path segments
+    size_t pos = dot + 1;
+    while (pos < path.length()) {
+        size_t next = path.find('.', pos);
+        std::string member = (next == std::string::npos)
+            ? path.substr(pos)
+            : path.substr(pos, next - pos);
+        val = val.GetChildMemberWithName(member.c_str());
+        if (!val.IsValid()) return SBValue();
+        pos = (next == std::string::npos) ? path.length() : next + 1;
+    }
+    return val;
+}
+
+// Type detection helpers
+bool IsZigSlice(SBValue val) {
+    if (!val.IsValid()) return false;
+    return val.GetChildMemberWithName("ptr").IsValid()
+        && val.GetChildMemberWithName("len").IsValid();
+}
+
+bool IsZigArrayList(SBValue val) {
+    if (!val.IsValid()) return false;
+    SBValue items = val.GetChildMemberWithName("items");
+    return items.IsValid() && IsZigSlice(items)
+        && val.GetChildMemberWithName("capacity").IsValid();
+}
+
+bool IsZigOptional(SBValue val) {
+    if (!val.IsValid()) return false;
+    return val.GetChildMemberWithName("data").IsValid()
+        || val.GetChildMemberWithName("some").IsValid();
+}
+
+bool IsZigErrorUnion(SBValue val) {
+    if (!val.IsValid()) return false;
+    return val.GetChildMemberWithName("tag").IsValid()
+        && val.GetChildMemberWithName("value").IsValid();
+}
+
+// Generic regex-based transformer
+using TransformFn = std::function<std::string(const std::smatch&, SBFrame)>;
+
+std::string ApplyRegexTransform(
+    const std::string& input,
+    const std::regex& pattern,
+    SBFrame frame,
+    TransformFn transform
+) {
+    std::string result;
+    std::string::const_iterator search_start = input.cbegin();
+    size_t last_end = 0;
+
+    std::smatch match;
+    while (std::regex_search(search_start, input.cend(), match, pattern)) {
+        size_t match_start = (search_start - input.cbegin()) + match.position();
+
+        // Try transformation
+        std::string replacement = transform(match, frame);
+        if (!replacement.empty()) {
+            result += input.substr(last_end, match_start - last_end);
+            result += replacement;
+            last_end = match_start + match.length();
+        }
+        search_start = match.suffix().first;
+    }
+
+    if (last_end == 0) return input;  // No transformations
+    result += input.substr(last_end);
+    return result;
+}
+
+} // anonymous namespace
+
+static std::string TransformZigExpression(const std::string& expr, SBFrame frame) {
+    std::string result = expr;
+
+    // 1. Transform subscript: slice[n] -> slice.ptr[n], arraylist[n] -> arraylist.items.ptr[n]
+    static const std::regex subscript_pattern(R"(([\w.]+)\s*\[([^\]]+)\])");
+    result = ApplyRegexTransform(result, subscript_pattern, frame,
+        [](const std::smatch& m, SBFrame f) -> std::string {
+            std::string path = m[1].str();
+            std::string index = m[2].str();
+            SBValue val = GetValueAtPath(f, path);
+
+            if (IsZigSlice(val)) {
+                return path + ".ptr[" + index + "]";
+            }
+            if (IsZigArrayList(val)) {
+                return path + ".items.ptr[" + index + "]";
+            }
+            return "";  // No transformation
+        });
+
+    // 2. Transform optional unwrap: optional.? -> optional.data
+    static const std::regex optional_pattern(R"(([\w.]+)\s*\.\s*\?)");
+    result = ApplyRegexTransform(result, optional_pattern, frame,
+        [](const std::smatch& m, SBFrame f) -> std::string {
+            std::string path = m[1].str();
+            SBValue val = GetValueAtPath(f, path);
+
+            if (IsZigOptional(val)) {
+                return path + ".data";
+            }
+            return "";
+        });
+
+    // 3. Transform error catch: err catch default -> (err.tag == 0 ? err.value : default)
+    static const std::regex catch_pattern(R"(([\w.]+)\s+catch\s+([\w.]+))");
+    result = ApplyRegexTransform(result, catch_pattern, frame,
+        [](const std::smatch& m, SBFrame f) -> std::string {
+            std::string path = m[1].str();
+            std::string dflt = m[2].str();
+            SBValue val = GetValueAtPath(f, path);
+
+            if (IsZigErrorUnion(val)) {
+                return "(" + path + ".tag == 0 ? " + path + ".value : " + dflt + ")";
+            }
+            return "";
+        });
+
+    return result;
+}
+
+//===----------------------------------------------------------------------===//
+// Custom Expression Command (overrides 'p')
+//===----------------------------------------------------------------------===//
+
+class ZigExpressionCommand : public SBCommandPluginInterface {
+public:
+    bool DoExecute(SBDebugger debugger, char** command, SBCommandReturnObject& result) override {
+        // Reconstruct the expression from command arguments
+        std::string expr;
+        if (command) {
+            for (int i = 0; command[i] != nullptr; ++i) {
+                if (i > 0) expr += " ";
+                expr += command[i];
+            }
+        }
+
+        if (expr.empty()) {
+            result.SetError("error: no expression provided");
+            return false;
+        }
+
+        // Get current frame
+        SBTarget target = debugger.GetSelectedTarget();
+        if (!target.IsValid()) {
+            result.SetError("error: no target");
+            return false;
+        }
+
+        SBProcess process = target.GetProcess();
+        if (!process.IsValid()) {
+            result.SetError("error: no process");
+            return false;
+        }
+
+        SBThread thread = process.GetSelectedThread();
+        if (!thread.IsValid()) {
+            result.SetError("error: no thread");
+            return false;
+        }
+
+        SBFrame frame = thread.GetSelectedFrame();
+        if (!frame.IsValid()) {
+            result.SetError("error: no frame");
+            return false;
+        }
+
+        // Transform Zig expressions to C
+        std::string transformed = TransformZigExpression(expr, frame);
+
+        // Evaluate the transformed expression
+        SBExpressionOptions options;
+        options.SetTimeoutInMicroSeconds(5000000);  // 5 seconds
+
+        SBValue value = frame.EvaluateExpression(transformed.c_str(), options);
+
+        if (value.GetError().Fail()) {
+            // If transformation didn't help, try original expression
+            if (transformed != expr) {
+                value = frame.EvaluateExpression(expr.c_str(), options);
+            }
+            if (value.GetError().Fail()) {
+                result.SetError(value.GetError().GetCString());
+                return false;
+            }
+        }
+
+        // Format output like standard 'p' command
+        SBStream stream;
+        value.GetDescription(stream);
+        result.AppendMessage(stream.GetData());
+        result.SetStatus(eReturnStatusSuccessFinishResult);
+
+        return true;
+    }
+};
+
+// Global instance to prevent destruction
+static ZigExpressionCommand* g_zig_expr_cmd = nullptr;
+
+static void RegisterZigExpressionCommand(SBDebugger debugger) {
+    SBCommandInterpreter interp = debugger.GetCommandInterpreter();
+    if (!interp.IsValid()) return;
+
+    // Create command handler
+    g_zig_expr_cmd = new ZigExpressionCommand();
+
+    // Register our command as __zdb_expr (internal name)
+    interp.AddCommand("__zdb_expr", g_zig_expr_cmd,
+        "Internal: Evaluate expression with Zig syntax support.");
+
+    // Override the 'p' alias to use our Zig-aware expression evaluator
+    // First, remove the existing 'p' alias
+    SBCommandReturnObject result;
+    interp.HandleCommand("command unalias p", result);
+
+    // Now create 'p' as an alias to our command
+    interp.HandleCommand("command alias p __zdb_expr", result);
+
+    // Also add 'zig' subcommands for explicit usage
+    SBCommand zig_cmd = interp.AddMultiwordCommand("zig", "Zig debugging commands");
+    if (zig_cmd.IsValid()) {
+        zig_cmd.AddCommand("print", g_zig_expr_cmd,
+            "Evaluate expression with Zig syntax support.");
+        zig_cmd.AddCommand("p", g_zig_expr_cmd,
+            "Shorthand for 'zig print'.");
+    }
+}
+
+//===----------------------------------------------------------------------===//
 // Plugin Entry Point
 //===----------------------------------------------------------------------===//
 
 bool lldb::PluginInitialize(SBDebugger debugger) {
-    if (RegisterWithInternalAPI(debugger)) {
-        fprintf(stderr, "[zdb] Loaded %zu Zig formatters\n", g_formatters.size());
+    bool success = RegisterWithInternalAPI(debugger);
+
+    // Register Zig expression command (overrides 'p' transparently)
+    RegisterZigExpressionCommand(debugger);
+
+    if (success) {
+        fprintf(stderr, "[zdb] Loaded %zu Zig formatters + Zig expression syntax for 'p'\n",
+                g_formatters.size());
         return true;
     }
 
-    fprintf(stderr, "[zdb] Failed to load. Use: command script import zig_formatters.py\n");
+    fprintf(stderr, "[zdb] Formatters failed, but Zig expression syntax available\n");
     return true;
 }
