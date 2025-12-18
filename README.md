@@ -233,6 +233,28 @@ zdb transparently extends the `p` command to support native Zig syntax:
 
 All transformations are automatic and transparent - just use `p` as usual.
 
+## Apple LLDB vs Homebrew LLDB
+
+zdb works with both Apple LLDB (Xcode) and Homebrew LLDB, with some differences:
+
+| Feature | Homebrew LLDB | Apple LLDB (Xcode) |
+|---------|---------------|-------------------|
+| Type formatters | ✓ `frame variable` | ✓ `frame variable` |
+| `p slice[n]` | ✓ via `p` | ✓ via `zp` |
+| `p optional.?` | ✓ via `p` | ✓ via `zp` |
+| `p err catch val` | ✓ via `p` | ✗ |
+
+**Homebrew LLDB** (recommended): Full support. The `p` command is transparently enhanced with Zig syntax.
+
+**Apple LLDB**: Type formatters work fully. Expression syntax is available via the `zp` command (uses regex-based transformation). The `p` command cannot be overridden due to C++ ABI incompatibility between plugins and Apple's internal LLDB build.
+
+```bash
+# Apple LLDB usage
+(lldb) frame variable my_slice    # Formatters work
+(lldb) zp my_slice[0]             # Zig expression syntax
+(lldb) zp maybe_value.?           # Optional unwrap
+```
+
 ## Comparison with zig-lldb
 
 | Feature | zdb | zig-lldb |

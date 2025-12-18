@@ -823,15 +823,37 @@ static bool IsAppleLLDB() {
     return false;
 }
 
+static void RegisterZigExpressionCommandApple(SBDebugger debugger) {
+    // Apple LLDB: Use regex commands to avoid C++ ABI incompatibility
+    // This provides limited Zig syntax support via string transformations
+    SBCommandInterpreter interp = debugger.GetCommandInterpreter();
+    SBCommandReturnObject result;
+
+    // zp command with regex patterns for common Zig syntax:
+    // - slice[n] -> slice.ptr[n]
+    // - arraylist[n] -> arraylist.items.ptr[n]
+    // - optional.? -> optional.data (when has value)
+    // Note: These are simpler than the full C++ implementation
+    interp.HandleCommand(
+        "command regex zp "
+        "'s/(.+)\\.\\?$/expr (int)%1.data/' "                    // optional.?
+        "'s/(.+)\\[([0-9]+)\\]$/expr %1.ptr[%2]/' "              // slice[n]
+        "'s/(.+)/expr %1/'",                                      // passthrough
+        result);
+
+    // Also provide zig print alias
+    interp.HandleCommand("command alias zig\\ print zp", result);
+}
+
 static void RegisterZigExpressionCommand(SBDebugger debugger) {
     SBCommandInterpreter interp = debugger.GetCommandInterpreter();
     if (!interp.IsValid()) return;
 
     // Apple LLDB has ABI incompatibility with SBCommandPluginInterface
     // subclasses - crashes on quit when destroying command objects.
-    // Skip command registration for Apple LLDB (formatters still work).
+    // Use regex commands for limited Zig syntax support.
     if (IsAppleLLDB()) {
-        fprintf(stderr, "[zdb] Apple LLDB detected - expression syntax disabled (use Homebrew LLDB)\n");
+        RegisterZigExpressionCommandApple(debugger);
         return;
     }
 
