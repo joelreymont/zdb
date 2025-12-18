@@ -103,28 +103,22 @@ static bool ZigOptionalSummary(SBValue value, SBTypeSummaryOptions options, SBSt
         return true;
     }
 
-    // Fallback: try older layout with 'null' named child
-    SBValue child = value.GetChildAtIndex(0);
-    if (!child.IsValid()) {
-        stream.Printf("null");
+    // Check for optional pointer types (?*T, ?[*]T) which LLDB shows as plain pointers
+    // Don't try to dereference - just show pointer value or null
+    const char* type_name = value.GetTypeName();
+    if (type_name && type_name[0] == '?' &&
+        (type_name[1] == '*' || (type_name[1] == '[' && type_name[2] == '*'))) {
+        uint64_t ptr_val = value.GetValueAsUnsigned(0);
+        if (ptr_val == 0) {
+            stream.Printf("null");
+        } else {
+            stream.Printf("0x%llx", (unsigned long long)ptr_val);
+        }
         return true;
     }
-    const char* name = child.GetName();
-    if (name && strcmp(name, "null") == 0) {
-        stream.Printf("null");
-        return true;
-    }
-    const char* summary = child.GetSummary();
-    if (summary && summary[0]) {
-        stream.Printf("%s", summary);
-        return true;
-    }
-    const char* val = child.GetValue();
-    if (val && val[0]) {
-        stream.Printf("%s", val);
-        return true;
-    }
-    stream.Printf("(has value)");
+
+    // Fallback for other optional layouts - be conservative, don't dereference
+    stream.Printf("?");
     return true;
 }
 
