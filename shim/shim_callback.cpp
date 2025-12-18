@@ -53,14 +53,21 @@ static bool ZigStringSummary(SBValue value, SBTypeSummaryOptions options, SBStre
     uint64_t len_val = len.GetValueAsUnsigned(0);
     uint64_t ptr_val = ptr.GetValueAsUnsigned(0);
 
-    if (len_val > 0 && len_val < 1024 && ptr_val != 0) {
+    // Use stack buffer to avoid heap allocation on every render
+    static constexpr size_t kMaxStringLen = 1024;
+    if (len_val > 0 && len_val <= kMaxStringLen && ptr_val != 0) {
         SBProcess process = value.GetProcess();
         if (process.IsValid()) {
-            std::vector<char> buffer(len_val + 1, 0);
+            char buffer[kMaxStringLen + 1];
             SBError error;
-            size_t bytes_read = process.ReadMemory(ptr_val, buffer.data(), len_val, error);
-            if (bytes_read == len_val && error.Success()) {
-                stream.Printf("\"%s\"", buffer.data());
+            size_t to_read = len_val < kMaxStringLen ? len_val : kMaxStringLen;
+            size_t bytes_read = process.ReadMemory(ptr_val, buffer, to_read, error);
+            if (bytes_read > 0 && error.Success()) {
+                buffer[bytes_read] = '\0';
+                stream.Printf("\"%s\"", buffer);
+                if (len_val > kMaxStringLen) {
+                    stream.Printf("... (%llu bytes)", (unsigned long long)len_val);
+                }
                 return true;
             }
         }
@@ -394,10 +401,15 @@ static bool RegisterFormatter(
     const char* pattern,
     bool (*callback)(SBValue, SBTypeSummaryOptions, SBStream&),
     const char* description,
-    bool is_regex = true
+    bool is_regex = true,
+    bool hide_children = false
 ) {
+    uint32_t options = eTypeOptionCascade;
+    if (hide_children) {
+        options |= eTypeOptionHideChildren;
+    }
     SBTypeSummary summary = SBTypeSummary::CreateWithCallback(
-        callback, eTypeOptionCascade, description);
+        callback, options, description);
 
     if (!summary.IsValid()) return false;
 
@@ -527,20 +539,20 @@ static bool RegisterWithInternalAPI(SBDebugger debugger) {
     RegisterFormatter(category_sp.ptr, AddTypeSummary, "^\\[\\*\\].*$", ZigPointerSummary, "Zig many pointer", true);
     RegisterFormatter(category_sp.ptr, AddTypeSummary, "^\\[\\*:.*\\].*$", ZigPointerSummary, "Zig sentinel pointer", true);
 
-    // 3. std library types
-    RegisterFormatter(category_sp.ptr, AddTypeSummary, "^array_list\\..*$", ZigArrayListSummary, "Zig ArrayList", true);
-    RegisterFormatter(category_sp.ptr, AddTypeSummary, "^hash_map\\..*$", ZigHashMapSummary, "Zig HashMap", true);
-    RegisterFormatter(category_sp.ptr, AddTypeSummary, "^bounded_array\\..*$", ZigBoundedArraySummary, "Zig BoundedArray", true);
-    RegisterFormatter(category_sp.ptr, AddTypeSummary, "^multi_array_list\\..*$", ZigMultiArrayListSummary, "Zig MultiArrayList", true);
-    RegisterFormatter(category_sp.ptr, AddTypeSummary, "^segmented_list\\..*$", ZigSegmentedListSummary, "Zig SegmentedList", true);
+    // 3. std library types (hide children - internal structure not useful)
+    RegisterFormatter(category_sp.ptr, AddTypeSummary, "^array_list\\..*$", ZigArrayListSummary, "Zig ArrayList", true, true);
+    RegisterFormatter(category_sp.ptr, AddTypeSummary, "^hash_map\\..*$", ZigHashMapSummary, "Zig HashMap", true, true);
+    RegisterFormatter(category_sp.ptr, AddTypeSummary, "^bounded_array\\..*$", ZigBoundedArraySummary, "Zig BoundedArray", true, true);
+    RegisterFormatter(category_sp.ptr, AddTypeSummary, "^multi_array_list\\..*$", ZigMultiArrayListSummary, "Zig MultiArrayList", true, true);
+    RegisterFormatter(category_sp.ptr, AddTypeSummary, "^segmented_list\\..*$", ZigSegmentedListSummary, "Zig SegmentedList", true, true);
 
-    // 4. C strings (sentinel-terminated u8 pointers)
-    RegisterFormatter(category_sp.ptr, AddTypeSummary, "^\\[\\*:0\\]u8$", ZigCStringSummary, "Zig C string", true);
-    RegisterFormatter(category_sp.ptr, AddTypeSummary, "^\\[\\*:0\\]const u8$", ZigCStringSummary, "Zig const C string", true);
+    // 4. C strings (hide children - just show the string)
+    RegisterFormatter(category_sp.ptr, AddTypeSummary, "^\\[\\*:0\\]u8$", ZigCStringSummary, "Zig C string", true, true);
+    RegisterFormatter(category_sp.ptr, AddTypeSummary, "^\\[\\*:0\\]const u8$", ZigCStringSummary, "Zig const C string", true, true);
 
-    // 5. Specific string types (highest priority)
-    RegisterFormatter(category_sp.ptr, AddTypeSummary, "^\\[\\]const u8$", ZigStringSummary, "Zig const string", true);
-    RegisterFormatter(category_sp.ptr, AddTypeSummary, "^\\[\\]u8$", ZigStringSummary, "Zig string", true);
+    // 5. Specific string types (hide children - just show the string)
+    RegisterFormatter(category_sp.ptr, AddTypeSummary, "^\\[\\]const u8$", ZigStringSummary, "Zig const string", true, true);
+    RegisterFormatter(category_sp.ptr, AddTypeSummary, "^\\[\\]u8$", ZigStringSummary, "Zig string", true, true);
 
     // 6. Synthetic children providers
     // AddCXXSynthetic crashes due to std::function ABI incompatibility
