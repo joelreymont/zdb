@@ -1,8 +1,4 @@
+example/demo
+test/test_types
 zig-out/
-zig-cache/
 .zig-cache/
-*.dylib
-*.so
-*.o
-*.a
-.DS_Store

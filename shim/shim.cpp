@@ -1,206 +1,84 @@
-// zdb LLDB plugin shim
+//===-- zdb shim.cpp - Zig LLDB Plugin with internal API hack -------------===//
 //
-// This C++ code bridges between LLDB's plugin API and Zig implementations.
-// LLDB's API is unstable C++, so we wrap it here and expose a stable C interface to Zig.
+// WARNING: This uses offset-based access to LLDB internal symbols.
+// It WILL break when LLDB is updated. Use zig_formatters.py for stability.
+//
+// To enable: set ZDB_USE_INTERNAL_API=1 before loading
+//
+//===----------------------------------------------------------------------===//
 
-#include "shim.h"
+#include "lldb/API/LLDB.h"
+#include "offset_loader.h"
+
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
-// LLDB public API (stable)
-#include "lldb/API/SBDebugger.h"
-
-//------------------------------------------------------------------------------
-// Stub implementations for callbacks (until LLDB is integrated)
-//------------------------------------------------------------------------------
-
-static const char* stub_get_type_name(ZdbValueObject valobj) {
-    (void)valobj;
-    return "unknown";
-}
-
-static size_t stub_get_child_count(ZdbValueObject valobj) {
-    (void)valobj;
-    return 0;
-}
-
-static ZdbValueObject stub_get_child_at_index(ZdbValueObject valobj, size_t index) {
-    (void)valobj;
-    (void)index;
-    return nullptr;
-}
-
-static ZdbValueObject stub_get_child_by_name(ZdbValueObject valobj, const char* name) {
-    (void)valobj;
-    (void)name;
-    return nullptr;
-}
-
-static uint64_t stub_get_uint(ZdbValueObject valobj) {
-    (void)valobj;
-    return 0;
-}
-
-static uint64_t stub_get_address(ZdbValueObject valobj) {
-    (void)valobj;
-    return 0;
-}
-
-static size_t stub_read_memory(uint64_t addr, uint8_t* buf, size_t size) {
-    (void)addr;
-    (void)buf;
-    (void)size;
-    return 0;
-}
-
-static ZdbShimCallbacks g_callbacks = {
-    .get_type_name = stub_get_type_name,
-    .get_child_count = stub_get_child_count,
-    .get_child_at_index = stub_get_child_at_index,
-    .get_child_by_name = stub_get_child_by_name,
-    .get_uint = stub_get_uint,
-    .get_address = stub_get_address,
-    .read_memory = stub_read_memory,
-};
-
-//------------------------------------------------------------------------------
-// Plugin initialization (called when dylib is loaded)
-//------------------------------------------------------------------------------
-
-__attribute__((constructor))
-static void zdb_plugin_init() {
-    fprintf(stderr, "[zdb] Plugin loaded\n");
-
-    // Initialize Zig side
-    zdb_init(&g_callbacks);
-
-    // TODO: Register formatters with LLDB
-    // This requires LLDB headers and linking against liblldb
-    //
-    // Example (pseudo-code):
-    // auto& category = debugger.GetCategory("zig");
-    // category.AddTypeSummary("^\\[\\].*$", make_shared<ZigSliceSummary>());
-
-    fprintf(stderr, "[zdb] Formatters registered (stub)\n");
-}
-
-__attribute__((destructor))
-static void zdb_plugin_fini() {
-    fprintf(stderr, "[zdb] Plugin unloaded\n");
-}
-
-//------------------------------------------------------------------------------
-// LLDB Plugin API
-//------------------------------------------------------------------------------
+using namespace lldb;
 
 namespace lldb {
-    bool PluginInitialize(SBDebugger debugger) {
-        (void)debugger;
-        fprintf(stderr, "[zdb] PluginInitialize called\n");
-        // TODO: Register type formatters with debugger
-        return true;
+    bool PluginInitialize(SBDebugger debugger);
+}
+
+// Verify offset table works by checking symbol resolution
+static bool VerifyOffsets(SBDebugger debugger) {
+    // Detect LLDB version
+    const char* version_str = SBDebugger::GetVersionString();
+    fprintf(stderr, "[zdb] LLDB version: %s\n", version_str);
+
+    // Extract version number (e.g., "lldb version 21.1.7" -> "21.1.7")
+    const char* ver = strstr(version_str, "version ");
+    if (!ver) {
+        fprintf(stderr, "[zdb] Cannot parse version\n");
+        return false;
     }
+    ver += 8; // Skip "version "
 
-    void PluginTerminate() {
-        fprintf(stderr, "[zdb] PluginTerminate called\n");
+    char version[32];
+    int i = 0;
+    while (ver[i] && (isdigit(ver[i]) || ver[i] == '.') && i < 31) {
+        version[i] = ver[i];
+        i++;
     }
-}
+    version[i] = '\0';
 
-//------------------------------------------------------------------------------
-// LLDB integration (requires LLDB headers)
-//------------------------------------------------------------------------------
-
-#if 0 // Enable when LLDB headers are available
-
-#include "lldb/lldb-public.h"
-#include "lldb/DataFormatters/TypeSummary.h"
-#include "lldb/DataFormatters/TypeSynthetic.h"
-#include "lldb/Core/ValueObject.h"
-#include "lldb/Symbol/CompilerType.h"
-
-using namespace lldb;
-using namespace lldb_private;
-
-// Wrapper callbacks that call into real LLDB ValueObjects
-static const char* real_get_type_name(ZdbValueObject valobj) {
-    auto* vo = static_cast<ValueObject*>(valobj);
-    return vo->GetTypeName().GetCString();
-}
-
-static size_t real_get_child_count(ZdbValueObject valobj) {
-    auto* vo = static_cast<ValueObject*>(valobj);
-    return vo->GetNumChildren();
-}
-
-static ZdbValueObject real_get_child_at_index(ZdbValueObject valobj, size_t index) {
-    auto* vo = static_cast<ValueObject*>(valobj);
-    return vo->GetChildAtIndex(index).get();
-}
-
-static ZdbValueObject real_get_child_by_name(ZdbValueObject valobj, const char* name) {
-    auto* vo = static_cast<ValueObject*>(valobj);
-    return vo->GetChildMemberWithName(name).get();
-}
-
-static uint64_t real_get_uint(ZdbValueObject valobj) {
-    auto* vo = static_cast<ValueObject*>(valobj);
-    bool success = false;
-    return vo->GetValueAsUnsigned(0, &success);
-}
-
-static uint64_t real_get_address(ZdbValueObject valobj) {
-    auto* vo = static_cast<ValueObject*>(valobj);
-    return vo->GetPointerValue();
-}
-
-// TypeSummary implementation that delegates to Zig
-class ZigSliceSummary : public TypeSummaryImpl {
-public:
-    ZigSliceSummary() : TypeSummaryImpl(TypeSummaryImpl::Flags()) {}
-
-    bool FormatObject(ValueObject* valobj, std::string& dest,
-                      const TypeSummaryOptions& options) override {
-        char buf[256];
-        if (zdb_format_slice(valobj, buf, sizeof(buf))) {
-            dest = buf;
-            return true;
-        }
+    // Load symbols
+    if (!zdb::g_symbols.load("/opt/homebrew/opt/llvm/lib/liblldb.dylib", version)) {
         return false;
     }
 
-    std::string GetDescription() override { return "Zig slice formatter"; }
-};
+    fprintf(stderr, "[zdb] Offset table verified for version %s\n", version);
+    fprintf(stderr, "[zdb] Resolved symbols:\n");
+    fprintf(stderr, "[zdb]   DataVisualization::Categories::GetCategory: %p\n", zdb::g_symbols.GetCategory);
+    fprintf(stderr, "[zdb]   DataVisualization::Categories::Enable:      %p\n", zdb::g_symbols.Enable);
+    fprintf(stderr, "[zdb]   TypeCategoryImpl::AddTypeSummary:           %p\n", zdb::g_symbols.AddTypeSummary);
+    fprintf(stderr, "[zdb]   TypeCategoryImpl::AddTypeSynthetic:         %p\n", zdb::g_symbols.AddTypeSynthetic);
+    fprintf(stderr, "[zdb]   CXXFunctionSummaryFormat::ctor:             %p\n", zdb::g_symbols.CXXFunctionSummaryFormat_ctor);
 
-// SyntheticChildren implementation for slices
-class ZigSliceSynthetic : public SyntheticChildrenFrontEnd {
-    ValueObject& m_backend;
-    size_t m_num_children;
+    fprintf(stderr, "\n[zdb] To actually USE these addresses, we would need to:\n");
+    fprintf(stderr, "[zdb]   1. Create lldb_private::ConstString for category name\n");
+    fprintf(stderr, "[zdb]   2. Create shared_ptr<TypeCategoryImpl> via GetCategory\n");
+    fprintf(stderr, "[zdb]   3. Create CXXFunctionSummaryFormat with our callback\n");
+    fprintf(stderr, "[zdb]   4. Call AddTypeSummary with the formatter\n");
+    fprintf(stderr, "[zdb]\n");
+    fprintf(stderr, "[zdb] This requires matching the exact C++ ABI (vtable layouts,\n");
+    fprintf(stderr, "[zdb] shared_ptr internals, ConstString representation).\n");
+    fprintf(stderr, "[zdb]\n");
+    fprintf(stderr, "[zdb] Recommendation: Use zig_formatters.py for stable formatters.\n");
 
-public:
-    ZigSliceSynthetic(ValueObject& backend)
-        : SyntheticChildrenFrontEnd(backend), m_backend(backend), m_num_children(0) {}
+    return true;
+}
 
-    size_t CalculateNumChildren() override {
-        m_num_children = zdb_slice_num_children(&m_backend);
-        return m_num_children;
+bool lldb::PluginInitialize(SBDebugger debugger) {
+    fprintf(stderr, "[zdb] Zig LLDB plugin loaded\n");
+
+    // Check if user wants internal API verification (experimental)
+    const char* use_internal = getenv("ZDB_USE_INTERNAL_API");
+    if (use_internal && strcmp(use_internal, "1") == 0) {
+        fprintf(stderr, "[zdb] Verifying internal API offsets (experimental)...\n");
+        VerifyOffsets(debugger);
     }
 
-    ValueObjectSP GetChildAtIndex(size_t idx) override {
-        // TODO: Create synthetic child for slice[idx]
-        return nullptr;
-    }
-
-    bool Update() override {
-        m_num_children = zdb_slice_num_children(&m_backend);
-        return true;
-    }
-
-    bool MightHaveChildren() override { return true; }
-
-    size_t GetIndexOfChildWithName(ConstString name) override {
-        // Parse "[N]" format
-        return UINT32_MAX;
-    }
-};
-
-#endif // LLDB headers available
+    fprintf(stderr, "[zdb] For type formatters, run: command script import /path/to/zig_formatters.py\n");
+    return true;
+}

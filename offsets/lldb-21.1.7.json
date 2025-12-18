@@ -1,0 +1,47 @@
+{
+  "version": "21.1.7",
+  "reference_symbol": "_ZN4lldb10SBDebugger10InitializeEv",
+  "reference_offset": "0x4c670",
+  "symbols": {
+    "DataVisualization::Categories::GetCategory": {
+      "mangled": "_ZN12lldb_private17DataVisualization10Categories11GetCategoryENS_11ConstStringERNSt3__110shared_ptrINS_16TypeCategoryImplEEEb",
+      "offset": "0x358b00",
+      "relative": "0x30c490"
+    },
+    "DataVisualization::Categories::Enable": {
+      "mangled": "_ZN12lldb_private17DataVisualization10Categories6EnableERKNSt3__110shared_ptrINS_16TypeCategoryImplEEEj",
+      "offset": "0x359380",
+      "relative": "0x30cd10"
+    },
+    "TypeCategoryImpl::AddTypeSummary": {
+      "mangled": "_ZN12lldb_private16TypeCategoryImpl14AddTypeSummaryEN4llvm9StringRefEN4lldb18FormatterMatchTypeENSt3__110shared_ptrINS_15TypeSummaryImplEEE",
+      "offset": "0x35ff38",
+      "relative": "0x3138c8"
+    },
+    "TypeCategoryImpl::AddTypeSynthetic": {
+      "mangled": "_ZN12lldb_private16TypeCategoryImpl16AddTypeSyntheticEN4llvm9StringRefEN4lldb18FormatterMatchTypeENSt3__110shared_ptrINS_17SyntheticChildrenEEE",
+      "offset": "0x36a298",
+      "relative": "0x31dc28"
+    },
+    "TypeCategoryImpl::AddTypeFormat": {
+      "mangled": "_ZN12lldb_private16TypeCategoryImpl13AddTypeFormatEN4llvm9StringRefEN4lldb18FormatterMatchTypeENSt3__110shared_ptrINS_14TypeFormatImplEEE",
+      "offset": "0x369968",
+      "relative": "0x31d2f8"
+    },
+    "TypeCategoryImpl::AddTypeFilter": {
+      "mangled": "_ZN12lldb_private16TypeCategoryImpl13AddTypeFilterEN4llvm9StringRefEN4lldb18FormatterMatchTypeENSt3__110shared_ptrINS_14TypeFilterImplEEE",
+      "offset": "0x36a4c0",
+      "relative": "0x31de50"
+    },
+    "CXXFunctionSummaryFormat::ctor": {
+      "mangled": "_ZN12lldb_private24CXXFunctionSummaryFormatC2ERKNS_15TypeSummaryImpl5FlagsENSt3__18functionIFbRNS_11ValueObjectERNS_6StreamERKNS_18TypeSummaryOptionsEEEEPKcj",
+      "offset": "0x37c1e0",
+      "relative": "0x32fb70"
+    },
+    "FormatManager::GetCategory": {
+      "mangled": "_ZN12lldb_private13FormatManager11GetCategoryENS_11ConstStringEb",
+      "offset": "0x35d64c",
+      "relative": "0x310fdc"
+    }
+  }
+}

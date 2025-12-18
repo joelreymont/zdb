@@ -1,0 +1,211 @@
+# zdb - Zig LLDB Type Formatters
+
+Native C++ data formatters for debugging Zig programs in LLDB. Shows slices, optionals, error unions, and standard library types in a readable format.
+
+## Installation
+
+```bash
+cd zdb
+zig build
+# Output: zig-out/lib/libzdb.dylib
+```
+
+Set up the offset file for your LLDB version:
+
+```bash
+mkdir -p ~/.config/zdb/offsets
+cp offsets/lldb-21.1.7.json ~/.config/zdb/offsets/
+```
+
+Add to `~/.lldbinit`:
+```
+plugin load /path/to/zdb/zig-out/lib/libzdb.dylib
+```
+
+## Example
+
+Create `demo.zig`:
+
+```zig
+const std = @import("std");
+
+const Color = enum { red, green, blue };
+const Point = struct { x: i32, y: i32 };
+const Shape = union(enum) {
+    circle: f32,
+    rectangle: struct { w: f32, h: f32 },
+};
+
+pub fn main() !void {
+    const greeting: []const u8 = "Hello, zdb!";
+    const numbers: []const i32 = &.{ 1, 2, 3, 4, 5 };
+    var maybe: ?i32 = 42;
+    var nothing: ?i32 = null;
+    var color: Color = .blue;
+    var point: Point = .{ .x = 100, .y = 200 };
+    var shape: Shape = .{ .circle = 3.14 };
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    var list: std.ArrayListUnmanaged(i32) = .empty;
+    defer list.deinit(gpa.allocator());
+    try list.appendSlice(gpa.allocator(), &.{ 10, 20, 30 });
+
+    _ = .{ &greeting, &numbers, &maybe, &nothing, &color, &point, &shape, &list };
+    std.debug.print("Ready\n", .{});  // breakpoint here
+}
+```
+
+Build and debug:
+
+```bash
+zig build-exe demo.zig -femit-bin=demo
+lldb demo -o "plugin load zig-out/lib/libzdb.dylib" -o "b demo.zig:25" -o run
+```
+
+Actual LLDB output with zdb:
+
+```
+(lldb) p point
+(demo.Point) { .x=100, .y=200 } {
+  x = 100
+  y = 200
+}
+(lldb) p color
+(demo.Color) blue .blue
+(lldb) p greeting
+([]u8) "Hello, zdb!" {
+  ptr = 0x00000001000d166e "Hello, zdb!"
+  len = 11
+}
+(lldb) p list
+(array_list.Aligned(i32,null)) len=3 capacity=32 {
+  items = len=3 ptr=0x100160000 {
+    ptr = 0x0000000100160000
+    len = 3
+  }
+  capacity = 32
+}
+```
+
+## Supported Types (19 formatters)
+
+| Pattern | Formatter | Example Output |
+|---------|-----------|----------------|
+| `[]u8`, `[]const u8` | String | `"Hello, World!"` |
+| `[]T` | Slice | `len=5 ptr=0x100123` |
+| `[N]T` | Array | `[5]...` |
+| `?T` | Optional | `null` or `42` |
+| `E!T` | Error Union | `error.FileNotFound` or value |
+| `union(enum)` | Tagged Union | `.circle = 5.0` |
+| `*T` | Pointer | `-> 42` or `null` |
+| `[*]T` | Many Pointer | `0x100123456` |
+| `[*:0]u8` | C String | `"null-terminated"` |
+| `[*:s]T` | Sentinel Pointer | `0x100123456` |
+| `module.Type` | Struct/Enum | `{ .x=1, .y=2 }` or `.blue` |
+| `array_list.*` | ArrayList | `len=3 capacity=32` |
+| `hash_map.*` | HashMap | `size=5` |
+| `bounded_array.*` | BoundedArray | `len=10` |
+| `multi_array_list.*` | MultiArrayList | `len=3 capacity=16` |
+| `segmented_list.*` | SegmentedList | `len=100` |
+
+## How It Works
+
+LLDB's internal C++ API (`TypeCategoryImpl::AddTypeSummary`) is not exported - symbols are marked local in liblldb.dylib. zdb bypasses this via offset tables:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Plugin Load                            │
+├─────────────────────────────────────────────────────────────┤
+│  1. Parse LLDB version from SBDebugger::GetVersionString()  │
+│  2. Load offset JSON from ~/.config/zdb/offsets/            │
+│  3. dlopen liblldb, find reference symbol                   │
+│  4. Compute base address: ref_addr - ref_offset             │
+│  5. Resolve internal functions: base + offset               │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  Formatter Registration                     │
+├─────────────────────────────────────────────────────────────┤
+│  For each type pattern:                                     │
+│  1. SBTypeSummary::CreateWithCallback(callback_fn)          │
+│  2. Extract shared_ptr from SBTypeSummary object            │
+│  3. Call TypeCategoryImpl::AddTypeSummary via offset        │
+│     - ARM64 ABI: shared_ptr passed indirectly (pointer)     │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   Runtime Callback                          │
+├─────────────────────────────────────────────────────────────┤
+│  When LLDB displays a Zig value:                            │
+│  1. Type name matches regex pattern                         │
+│  2. LLDB calls our C++ callback                             │
+│  3. Callback extracts fields via SBValue API                │
+│  4. Writes formatted string to SBStream                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `shim/shim_callback.cpp` | Plugin entry, formatters, internal API calls |
+| `shim/offset_loader.h` | JSON parsing, symbol resolution |
+| `offsets/lldb-*.json` | Per-version offset tables |
+| `tools/dump_offsets.py` | Generate offset tables for new LLDB versions |
+
+### ARM64 ABI Details
+
+The tricky part is calling `TypeCategoryImpl::AddTypeSummary(StringRef, FormatterMatchType, shared_ptr<TypeSummaryImpl>)`:
+
+- `this` pointer in x0
+- `StringRef` (ptr + len) in x1, x2
+- `FormatterMatchType` enum in x3
+- `shared_ptr` passed **indirectly** in x4 (pointer to 16-byte struct)
+
+Non-trivial types like `shared_ptr` (with destructor) are passed by pointer on ARM64, not inline in registers.
+
+## Adding New LLDB Versions
+
+When LLDB is updated:
+
+```bash
+python3 tools/dump_offsets.py /opt/homebrew/opt/llvm/lib/liblldb.dylib > offsets/lldb-XX.Y.Z.json
+cp offsets/lldb-XX.Y.Z.json ~/.config/zdb/offsets/
+```
+
+The offset table contains:
+- `reference_symbol`: Known exported symbol (e.g., `_ZN4lldb10SBDebugger10InitializeEv`)
+- `reference_offset`: Its offset in the binary
+- Symbol offsets for `GetCategory`, `AddTypeSummary`, `Enable`
+
+## Testing
+
+```bash
+# Run automated tests
+./test/run_tests.sh
+
+# Manual testing
+lldb test/test_types \
+    -o "plugin load zig-out/lib/libzdb.dylib" \
+    -o "b test_types.zig:157" \
+    -o "run" \
+    -o "frame variable"
+```
+
+Tests verify: string slices, int slices, enums, structs, ArrayList, HashMap.
+
+## Comparison with zig-lldb
+
+Jacob Shtoyer's [lldb-zig fork](https://github.com/jacobly0/llvm-project/tree/lldb-zig) implements a full `TypeSystemZig` with DWARF integration. Requires rebuilding LLDB but provides:
+
+- Native expression evaluation for Zig types
+- Full type system integration
+
+zdb provides formatting via offset tables, working with any stock LLDB.
+
+## License
+
+MIT

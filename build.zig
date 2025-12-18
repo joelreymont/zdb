@@ -18,13 +18,12 @@ pub fn build(b: *std.Build) void {
         .root_module = zdb_mod,
     });
 
-    // Add C++ shim
+    // Add C++ shim with native callbacks (uses SBTypeSummary::CreateWithCallback)
     lib.addCSourceFile(.{
-        .file = b.path("shim/shim.cpp"),
+        .file = b.path("shim/shim_callback.cpp"),
         .flags = &.{
             "-std=c++17",
             "-fno-exceptions",
-            "-fno-rtti",
         },
     });
     lib.addIncludePath(b.path("shim"));
