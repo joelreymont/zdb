@@ -560,11 +560,8 @@ static bool RegisterWithInternalAPI(SBDebugger debugger) {
     RegisterFormatter(category_sp.ptr, AddTypeSummary, "^\\[\\]u8$", ZigStringSummary, "Zig string", true, true);
 
     // 6. Synthetic children providers
-    // NOT SUPPORTED from plugins - LLDB's SBTypeSynthetic only supports Python callbacks.
-    // SBTypeSummary has CreateWithCallback(C_fn_ptr) but SBTypeSynthetic does not.
-    // The internal AddCXXSynthetic requires std::function and SyntheticChildrenFrontEnd
-    // subclass, which needs internal LLDB headers and LLVM linkage.
-    //
+    // NOT SUPPORTED - LLDB's SBTypeSynthetic only has Python callbacks, no C callback API.
+    // The internal AddTypeSynthetic registers but lookup fails (unknown reason).
     // Workaround: Use `p slice[n]` expression syntax (implemented in ZigExpressionCommand)
 
     // Enable category
