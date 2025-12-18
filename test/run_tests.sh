@@ -4,28 +4,30 @@ set -e
 
 cd "$(dirname "$0")/.."
 
-# Find LLDB - check LLDB env var, then PATH, then LLVM_PATH, then platform defaults
+# Find LLDB - prefer Homebrew LLVM (has offset files), then env vars, then PATH
 find_lldb() {
+    # Explicit override
     if [ -n "$LLDB" ] && [ -x "$LLDB" ]; then
         echo "$LLDB"
         return 0
     fi
-    # Check PATH
-    if command -v lldb >/dev/null 2>&1; then
-        command -v lldb
-        return 0
-    fi
+    # LLVM_PATH env var
     if [ -n "$LLVM_PATH" ] && [ -x "$LLVM_PATH/bin/lldb" ]; then
         echo "$LLVM_PATH/bin/lldb"
         return 0
     fi
-    # Platform defaults
-    for path in /opt/homebrew/opt/llvm/bin/lldb /usr/local/opt/llvm/bin/lldb /usr/bin/lldb; do
+    # Homebrew LLVM first (we have offset files for this)
+    for path in /opt/homebrew/opt/llvm/bin/lldb /usr/local/opt/llvm/bin/lldb; do
         if [ -x "$path" ]; then
             echo "$path"
             return 0
         fi
     done
+    # Fallback to PATH (may be Apple LLDB without offset files)
+    if command -v lldb >/dev/null 2>&1; then
+        command -v lldb
+        return 0
+    fi
     return 1
 }
 
