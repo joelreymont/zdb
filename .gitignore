@@ -2,3 +2,4 @@ example/demo
 test/test_types
 zig-out/
 .zig-cache/
+demo

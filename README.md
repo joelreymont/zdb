@@ -60,26 +60,26 @@ Build and debug:
 
 ```bash
 zig build-exe demo.zig -femit-bin=demo
-lldb demo -o "plugin load zig-out/lib/libzdb.dylib" -o "b demo.zig:25" -o run
+lldb demo -o "plugin load zig-out/lib/libzdb.dylib" -o "b demo.zig:26" -o run
 ```
 
 Actual LLDB output with zdb:
 
 ```
 (lldb) p point
-(demo.Point) { .x=100, .y=200 } {
+(demo.Point) $0 = { .x=100, .y=200 } {
   x = 100
   y = 200
 }
 (lldb) p color
-(demo.Color) blue .blue
+(demo.Color) $1 = blue .blue
 (lldb) p greeting
-([]u8) "Hello, zdb!" {
-  ptr = 0x00000001000d166e "Hello, zdb!"
+([]u8) $2 = "Hello, zdb!" {
+  ptr = 0x00000001000d122e "Hello, zdb!"
   len = 11
 }
 (lldb) p list
-(array_list.Aligned(i32,null)) len=3 capacity=32 {
+(array_list.Aligned(i32,null)) $3 = len=3 capacity=32 {
   items = len=3 ptr=0x100160000 {
     ptr = 0x0000000100160000
     len = 3
@@ -220,21 +220,16 @@ zdb transparently extends the `p` command to support native Zig syntax:
 ```
 (lldb) p int_slice[0]
 (int) $0 = 1
-
 (lldb) p int_slice[2]
 (int) $1 = 3
-
 (lldb) p list[0]
 (int) $2 = 10
-
 (lldb) p test_struct.optional_value.?
 (int) $3 = 42
-
 (lldb) p test_struct.error_result catch 0
 (int) $4 = 100
-
 (lldb) p string_slice
-([]u8) "Hello, zdb debugger!"
+([]u8) $5 = "Hello, zdb debugger!"
 ```
 
 **Supported Zig syntax:**
