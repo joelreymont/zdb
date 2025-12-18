@@ -693,7 +693,7 @@ static std::string TransformZigExpression(const std::string& expr, SBFrame frame
             return "";  // No transformation
         });
 
-    // 2. Transform optional unwrap: optional.? -> check discriminant then access data
+    // 2. Transform optional unwrap: optional.? -> ternary for safe null handling
     // Note: Zig optionals have 'some' (discriminant) and 'data' (payload) fields
     static const std::regex optional_pattern(R"(([\w.]+)\s*\.\s*\?)");
     result = ApplyRegexTransform(result, optional_pattern, frame,
@@ -702,23 +702,15 @@ static std::string TransformZigExpression(const std::string& expr, SBFrame frame
             SBValue val = GetValueAtPath(f, path);
 
             if (IsZigOptional(val)) {
-                // Check discriminant at runtime - refuse to unwrap null
-                SBValue some = val.GetChildMemberWithName("some");
-                if (some.IsValid() && some.GetValueAsUnsigned(0) == 0) {
-                    // Optional is null - don't rewrite, let LLDB show error
-                    return "";
-                }
-                return path + ".data";
+                // Use ternary for runtime null check - shows data or 0 for null
+                return "(" + path + ".some ? " + path + ".data : 0)";
             }
             // Check for optional pointer types (?*T) which appear as plain pointers
             const char* type_name = val.GetTypeName();
             if (type_name && type_name[0] == '?') {
-                // Type starts with '?' - it's an optional, check for null
-                if (val.GetValueAsUnsigned(0) == 0) {
-                    return "";  // Null pointer optional
-                }
-                // For ?*T, the value itself is the pointer - dereference it
-                return "*" + path;
+                // Type starts with '?' - it's an optional pointer
+                // Use ternary: non-null dereferences, null returns 0
+                return "(" + path + " ? *" + path + " : 0)";
             }
             return "";
         });
