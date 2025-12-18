@@ -560,12 +560,12 @@ static bool RegisterWithInternalAPI(SBDebugger debugger) {
     RegisterFormatter(category_sp.ptr, AddTypeSummary, "^\\[\\]u8$", ZigStringSummary, "Zig string", true, true);
 
     // 6. Synthetic children providers
-    // AddCXXSynthetic crashes due to std::function ABI incompatibility
-    // AddTypeSynthetic with fake shared_ptr doesn't register properly
-    // For now, skip synthetic registration - expression transformation still works
-    fprintf(stderr, "[zdb] Synthetic providers: skipped (ABI barrier)\n");
-    // NOTE: The expression transformer in ZigExpressionCommand still handles
-    // slice[n], arraylist[n], optional.?, and err catch val syntax
+    // NOT SUPPORTED from plugins - LLDB's SBTypeSynthetic only supports Python callbacks.
+    // SBTypeSummary has CreateWithCallback(C_fn_ptr) but SBTypeSynthetic does not.
+    // The internal AddCXXSynthetic requires std::function and SyntheticChildrenFrontEnd
+    // subclass, which needs internal LLDB headers and LLVM linkage.
+    //
+    // Workaround: Use `p slice[n]` expression syntax (implemented in ZigExpressionCommand)
 
     // Enable category
     if (zdb::g_symbols.table.Enable) {
