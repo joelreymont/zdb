@@ -1,0 +1,49 @@
+Warning: CXXFunctionSummaryFormat::ctor not found
+{
+  "version": "1703.0.234.3",
+  "reference_symbol": "_ZN4lldb10SBDebugger10InitializeEv",
+  "reference_offset": "0x39fac",
+  "symbols": {
+    "DataVisualization::Categories::GetCategory": {
+      "mangled": "_ZN12lldb_private17DataVisualization10Categories11GetCategoryENS_11ConstStringERNSt3__110shared_ptrINS_16TypeCategoryImplEEEb",
+      "offset": "0x4313e4",
+      "relative": "0x3f7438"
+    },
+    "DataVisualization::Categories::Enable": {
+      "mangled": "_ZN12lldb_private17DataVisualization10Categories6EnableERKNSt3__110shared_ptrINS_16TypeCategoryImplEEEj",
+      "offset": "0x431940",
+      "relative": "0x3f7994"
+    },
+    "TypeCategoryImpl::AddTypeSummary": {
+      "mangled": "_ZN12lldb_private16TypeCategoryImpl14AddTypeSummaryEN4llvm9StringRefEN4lldb18FormatterMatchTypeENSt3__110shared_ptrINS_15TypeSummaryImplEEE",
+      "offset": "0x437ac4",
+      "relative": "0x3fdb18"
+    },
+    "TypeCategoryImpl::AddTypeSynthetic": {
+      "mangled": "_ZN12lldb_private16TypeCategoryImpl16AddTypeSyntheticEN4llvm9StringRefEN4lldb18FormatterMatchTypeENSt3__110shared_ptrINS_17SyntheticChildrenEEE",
+      "offset": "0x441394",
+      "relative": "0x4073e8"
+    },
+    "TypeCategoryImpl::AddTypeFormat": {
+      "mangled": "_ZN12lldb_private16TypeCategoryImpl13AddTypeFormatEN4llvm9StringRefEN4lldb18FormatterMatchTypeENSt3__110shared_ptrINS_14TypeFormatImplEEE",
+      "offset": "0x440c40",
+      "relative": "0x406c94"
+    },
+    "TypeCategoryImpl::AddTypeFilter": {
+      "mangled": "_ZN12lldb_private16TypeCategoryImpl13AddTypeFilterEN4llvm9StringRefEN4lldb18FormatterMatchTypeENSt3__110shared_ptrINS_14TypeFilterImplEEE",
+      "offset": "0x441530",
+      "relative": "0x407584"
+    },
+    "CXXFunctionSummaryFormat::ctor": null,
+    "FormatManager::GetCategory": {
+      "mangled": "_ZN12lldb_private13FormatManager11GetCategoryENS_11ConstStringEb",
+      "offset": "0x4355a0",
+      "relative": "0x3fb5f4"
+    },
+    "formatters::AddCXXSynthetic": {
+      "mangled": "_ZN12lldb_private10formatters15AddCXXSyntheticENSt3__110shared_ptrINS_16TypeCategoryImplEEENS1_8functionIFPNS_25SyntheticChildrenFrontEndEPNS_20CXXSyntheticChildrenENS2_INS_11ValueObjectEEEEEEPKcN4llvm9StringRefENS_17SyntheticChildren5FlagsEb",
+      "offset": "0x441208",
+      "relative": "0x40725c"
+    }
+  }
+}
