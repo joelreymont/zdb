@@ -472,14 +472,24 @@ static std::string ResolveLibLLDBPath() {
 }
 
 static bool RegisterWithInternalAPI(SBDebugger debugger) {
-    // Get LLDB version
+    // Get LLDB version - handle multiple formats:
+    // - Homebrew/upstream: "lldb version 21.1.7 ..."
+    // - Apple Xcode: "lldb-1703.0.234.3 ..."
     const char* version_str = SBDebugger::GetVersionString();
     const char* ver = strstr(version_str, "version ");
-    if (!ver) {
-        fprintf(stderr, "[zdb] Could not parse LLDB version\n");
-        return false;
+    if (ver) {
+        ver += 8;  // Skip "version "
+    } else if (strncmp(version_str, "lldb-", 5) == 0) {
+        ver = version_str + 5;  // Skip "lldb-"
+    } else {
+        // Try to find any leading digits
+        ver = version_str;
+        while (*ver && !isdigit(*ver)) ver++;
+        if (!*ver) {
+            fprintf(stderr, "[zdb] Could not parse LLDB version from: %s\n", version_str);
+            return false;
+        }
     }
-    ver += 8;
 
     char version[32];
     int i = 0;
